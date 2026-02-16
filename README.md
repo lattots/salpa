@@ -64,7 +64,7 @@ Deploying Salpa is most convenient using Docker Compose. You can spin up the Sal
 ```yaml
 services:
   salpa:
-    image: salpa-server
+    image: lattots/salpa:latest
 
     environment:
       # The server will look for the configuration file here

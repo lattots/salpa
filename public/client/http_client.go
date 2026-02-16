@@ -24,7 +24,7 @@ func NewHTTPClient(authDomain string, providers []string) (AuthClient, error) {
 	if len(providers) == 0 {
 		return nil, errors.New("no providers")
 	}
-	verKey, err := getVerificationKey(authDomain)
+	verKey, err := GetVerificationKey(authDomain)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get verification key: %w", err)
 	}
