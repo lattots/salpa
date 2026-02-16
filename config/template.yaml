@@ -1,0 +1,19 @@
+providers:
+  google:
+    active: true
+    env:
+      clientID: "GOOGLE_CLIENT_ID"
+      clientSecret: "GOOGLE_CLIENT_SECRET"
+
+store:
+  driver: "sqlite" # Currently Salpa only supports SQLite as token store
+  connectionString: "/app/data/token.db" # In the future this can also be Postgres etc. connection string
+    
+service:
+  privateKeyFilename: "/app/data/ed25519_private_key" # If this key doesn't already exist, Salpa will create one
+
+  port: 5875 # This is the default port of Salpa server
+
+  serviceDomain: "https://this.com" # Domain of the Salpa server
+
+  appDomain: "https://client.application.com" # Domain of the client application

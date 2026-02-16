@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS sessions (
+	id TEXT PRIMARY KEY,
+	userID TEXT NOT NULL,
+	email text NOT NULL,
+	expiresAt INTEGER NOT NULL,
+);
