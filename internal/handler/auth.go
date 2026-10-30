@@ -4,8 +4,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/lattots/salpa/internal/models"
@@ -20,23 +22,45 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authProvider, err := h.getAuthProvider(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	returnURL, err := url.Parse(returnTo)
+	if err != nil || !h.isValidReturnDomain(returnURL) {
+		http.Error(w, "return_to parameter is not valid URL", http.StatusBadRequest)
+		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "return_to",
 		Value:    returnTo,
-		Path:     "/",
+		Path:     "/auth",
 		Expires:  time.Now().Add(10 * time.Minute),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	state := generateStateCookie(w)
+	authProvider, err := h.getAuthProvider(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// state token is used to verify that the callback request redirected from
+	// Google is done by the same browser that initiated the authentication.
+	// It is set to both URL query parameter and http only cookie so it can be
+	// verified later in the callback.
+	state := generateStateToken()
 	url := authProvider.GetAuthCodeURL(state)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/auth",
+		Expires:  time.Now().Add(10 * time.Minute),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -47,15 +71,20 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authProvider, err := h.getAuthProvider(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	wantedURI := fmt.Sprintf("/auth/callback/%s", authProvider)
+	if r.URL.Path != wantedURI {
+		http.Error(w, "Invalid callback URI", http.StatusBadRequest)
+	}
+
 	code := r.FormValue("code")
 	if code == "" {
 		http.Error(w, "Code not found", http.StatusBadRequest)
 		return
-	}
-
-	authProvider, err := h.getAuthProvider(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	user, err := authProvider.ExchangeUserInfo(code)
@@ -91,7 +120,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// This handles setting token cookies as well as removing return_to cookie from the response
-	h.setRedirectCookies(w, r, accessToken, expiresAt, refreshToken)
+	h.setRedirectCookies(w, accessToken, expiresAt, refreshToken)
 
 	http.Redirect(w, r, returnToURL, http.StatusSeeOther)
 }
@@ -138,7 +167,6 @@ func (h *Handler) GetPublicKey(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setRedirectCookies(
 	w http.ResponseWriter,
-	r *http.Request,
 	accessToken string,
 	accessTokenExpiresAt time.Time,
 	refreshToken models.RefreshToken,
@@ -157,18 +185,18 @@ func (h *Handler) setRedirectCookies(
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
 		Value:    refreshToken.TokenID,
-		Path:     "/auth/refresh",
-		Domain:   h.serviceDomain,
+		Path:     "/auth",
+		Domain:   h.appDomain,
 		Expires:  refreshToken.ExpiresAt,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	http.SetCookie(w, &http.Cookie{
 		Name:   "return_to",
 		Value:  "",
-		Path:   "/",
+		Path:   "/auth",
 		MaxAge: -1,
 	})
 }
@@ -184,4 +212,13 @@ func (h *Handler) getAuthProvider(r *http.Request) (oauth.Provider, error) {
 	}
 
 	return authProvider, nil
+}
+
+func (h *Handler) isValidReturnDomain(u *url.URL) bool {
+	return u != nil &&
+		u.IsAbs() &&
+		u.Scheme == "https" &&
+		u.User == nil &&
+		u.Hostname() == h.appDomain &&
+		u.Fragment == ""
 }

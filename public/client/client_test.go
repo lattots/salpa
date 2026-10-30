@@ -43,7 +43,7 @@ func TestGetVerificationKey(t *testing.T) {
 	}
 
 	router := http.NewServeMux()
-	router.HandleFunc("GET /auth/verification-key", mockHandler)
+	router.HandleFunc("GET /auth/jwks", mockHandler)
 
 	server := httptest.NewServer(router)
 	defer server.Close()

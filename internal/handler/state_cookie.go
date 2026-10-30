@@ -5,21 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"time"
 )
 
-func generateStateCookie(w http.ResponseWriter) string {
+func generateStateToken() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
-
-	cookie := http.Cookie{
-		Name:     "state",
-		Value:    state,
-		Expires:  time.Now().Add(10 * time.Minute),
-		HttpOnly: true,
-	}
-	http.SetCookie(w, &cookie)
 
 	return state
 }
@@ -30,7 +21,7 @@ var (
 )
 
 func verifyRequestStateCookie(r *http.Request) error {
-	cookie, err := r.Cookie("state")
+	cookie, err := r.Cookie("oauth_state")
 	if err != nil {
 		return ErrNoStateCookie
 	}

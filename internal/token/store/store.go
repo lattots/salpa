@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/lattots/salpa/internal/config"
@@ -25,11 +24,7 @@ func CreateStore(conf config.StoreConfig) (Store, error) {
 	var err error
 	switch conf.Driver {
 	case "sqlite":
-		db, err := sql.Open("sqlite3", conf.ConnectionString)
-		if err != nil {
-			return nil, err
-		}
-		store, err = NewSQLiteStore(db)
+		store, err = InitSQLiteStore(conf.ConnectionString)
 		if err != nil {
 			return nil, err
 		}

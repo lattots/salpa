@@ -10,7 +10,7 @@ import (
 )
 
 func GetVerificationKey(authServiceURL string) (ed25519.PublicKey, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/auth/verification-key", authServiceURL))
+	resp, err := http.Get(fmt.Sprintf("%s/auth/jwks", authServiceURL))
 	if err != nil {
 		return nil, err
 	}

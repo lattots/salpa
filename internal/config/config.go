@@ -52,6 +52,5 @@ type ServiceConfiguration struct {
 
 	Port int `yaml:"port"`
 
-	ServiceDomain string `yaml:"serviceDomain"`
-	AppDomain     string `yaml:"appDomain"`
+	AppDomain string `yaml:"appDomain"`
 }

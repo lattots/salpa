@@ -12,10 +12,9 @@ import (
 )
 
 type Handler struct {
-	providers     map[string]oauth.Provider
-	token         *token.Manager
-	appDomain     string // This is the domain name of the client application
-	serviceDomain string // This is the domain name of the auth service
+	providers map[string]oauth.Provider
+	token     *token.Manager
+	appDomain string // This is the domain name of the client application
 }
 
 func CreateHandlerFromConf(conf config.SystemConfiguration, tokenManager *token.Manager) (*Handler, error) {
@@ -23,16 +22,15 @@ func CreateHandlerFromConf(conf config.SystemConfiguration, tokenManager *token.
 		return nil, errors.New("error no auth providers")
 	}
 
-	providers := oauth.CreateProviders(conf.Service.ServiceDomain, conf.Providers)
+	providers := oauth.CreateProviders(conf.Service.AppDomain, conf.Providers)
 	if len(slices.Collect(maps.Keys(providers))) == 0 {
 		return nil, fmt.Errorf("no providers set in conf. Please set providers in configuration file\n")
 	}
 
 	h := &Handler{
-		providers:     providers,
-		token:         tokenManager,
-		appDomain:     conf.Service.AppDomain,
-		serviceDomain: conf.Service.ServiceDomain,
+		providers: providers,
+		token:     tokenManager,
+		appDomain: conf.Service.AppDomain,
 	}
 
 	return h, nil
