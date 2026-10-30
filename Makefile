@@ -1,8 +1,7 @@
 .PHONY: test build
 
 test:
-	go test ./internal/...
-	go test ./public/...
+	go test ./...
 
 build: test
 	docker build --tag lattots/salpa .

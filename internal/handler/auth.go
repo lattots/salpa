@@ -70,15 +70,29 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
+	http.SetCookie(w, &http.Cookie{
+		Name:   "oauth_state",
+		Value:  "",
+		Path:   "/auth",
+		MaxAge: -1,
+	})
+
+	returnToURL, err, status := h.parseReturnToAddress(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
 
 	authProvider, err := h.getAuthProvider(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	wantedURI := fmt.Sprintf("/auth/callback/%s", authProvider)
+	wantedURI := fmt.Sprintf("/auth/callback/%s", r.PathValue("provider"))
 	if r.URL.Path != wantedURI {
 		http.Error(w, "Invalid callback URI", http.StatusBadRequest)
+		return
 	}
 
 	code := r.FormValue("code")
@@ -108,17 +122,6 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	returnToCookie, err := r.Cookie("return_to")
-	if err != nil {
-		http.Error(w, "No return_to cookie found", http.StatusBadRequest)
-		return
-	}
-	returnToURL := returnToCookie.Value
-	if returnToURL == "" {
-		http.Error(w, "Empty return_to URL found", http.StatusBadRequest)
-		return
-	}
-
 	// This handles setting token cookies as well as removing return_to cookie from the response
 	h.setRedirectCookies(w, accessToken, expiresAt, refreshToken)
 
@@ -126,6 +129,10 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	if !h.isValidSource(r) {
+		http.Error(w, "Untrusted source", http.StatusForbidden)
+		return
+	}
 	cookie, err := r.Cookie("refresh_token")
 	if err != nil {
 		http.Error(w, "Refresh token missing", http.StatusUnauthorized)
@@ -151,6 +158,36 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("refresh_token")
+	if err != nil {
+		http.Error(w, "Refresh token missing", http.StatusUnauthorized)
+		return
+	}
+
+	refreshToken := models.RefreshToken{
+		TokenID: cookie.Value,
+	}
+
+	h.token.RemoveRefreshToken(refreshToken)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:   "refresh_token",
+		Value:  "",
+		Path:   "/auth",
+		MaxAge: -1,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:   "access_token",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
 	})
 
 	w.WriteHeader(http.StatusNoContent)
@@ -221,4 +258,37 @@ func (h *Handler) isValidReturnDomain(u *url.URL) bool {
 		u.User == nil &&
 		u.Hostname() == h.appDomain &&
 		u.Fragment == ""
+}
+
+// isValidSource checks whether the request originated from the application
+func (h *Handler) isValidSource(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	return u.Scheme == "https" &&
+		u.Hostname() == h.appDomain &&
+		u.Port() == ""
+}
+
+func (h *Handler) parseReturnToAddress(r *http.Request) (string, error, int) {
+	returnToCookie, err := r.Cookie("return_to")
+	if err != nil {
+		return "", fmt.Errorf("No return_to cookie found"), http.StatusBadRequest
+	}
+	returnToString := returnToCookie.Value
+	if returnToString == "" {
+		return "", fmt.Errorf("Empty return_to URL found"), http.StatusBadRequest
+	}
+	returnToURL, err := url.Parse(returnToString)
+	if err != nil || returnToURL.Hostname() != h.appDomain {
+		return "", fmt.Errorf("Invalid return_to adderss"), http.StatusBadRequest
+	}
+	return returnToString, nil, 0
 }

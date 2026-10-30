@@ -66,6 +66,9 @@ func (m *Manager) verifyToken(tokenStr string, keyFunc func(token *jwt.Token) (a
 	if errors.Is(err, jwt.ErrTokenMalformed) {
 		return nil, ErrTokenMalformed
 	}
+	if errors.Is(err, jwt.ErrTokenExpired) {
+		return nil, ErrTokenInvalid
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}

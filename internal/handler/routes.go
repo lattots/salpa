@@ -12,6 +12,9 @@ func (h *Handler) SetRoutes(router *http.ServeMux) {
 	// Refres expiring access token
 	router.HandleFunc("POST /auth/refresh", h.HandleRefresh)
 
+	// End session
+	router.HandleFunc("POST /auth/logout", h.HandleLogout)
+
 	// Get access token verification key
 	// This is used by the server to verify incoming access tokens
 	router.HandleFunc("GET /auth/jwks", h.GetPublicKey)

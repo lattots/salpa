@@ -47,7 +47,7 @@ func (c *httpClient) GetLoginURLs() []string {
 func (c *httpClient) VerifyToken(tokenStr string) (*models.UserClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &models.UserClaims{}, c.getVerificationKey)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing refresh token: %w", err)
+		return nil, ErrInvalidToken
 	}
 	if !token.Valid {
 		return nil, ErrInvalidToken

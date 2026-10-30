@@ -1,6 +1,7 @@
 package token
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -25,4 +26,8 @@ func (m *Manager) NewAccessToken(refreshToken string) (string, time.Time, error)
 
 func (m *Manager) VerifyAccessToken(accessTokenString string) (*models.UserClaims, error) {
 	return m.verifyToken(accessTokenString, m.getAccessPublic)
+}
+
+func (m *Manager) RemoveRefreshToken(refreshToken models.RefreshToken) error {
+	return m.refreshTokenStore.Remove(context.TODO(), refreshToken.TokenID)
 }

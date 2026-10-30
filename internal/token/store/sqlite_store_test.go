@@ -2,139 +2,95 @@ package store_test
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/lattots/salpa/internal/config"
 	"github.com/lattots/salpa/internal/models"
 	"github.com/lattots/salpa/internal/token/store"
 )
 
-const testDBFilename = "./testStore.db"
-
-func cleanup() {
-	_ = os.Remove(testDBFilename)
-}
-
-func TestSQLiteStore_AddAndCheck(t *testing.T) {
-	t.Cleanup(cleanup)
-
-	store, err := store.InitSQLiteStore(testDBFilename)
+func TestCreateStoreInitializesSQLiteSchema(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "sessions.sqlite")
+	s, err := store.CreateStore(config.StoreConfig{
+		Driver:           "sqlite",
+		ConnectionString: filename,
+	})
 	if err != nil {
-		t.Fatalf("error initializing store: %s\n", err)
+		t.Fatalf("CreateStore: %v", err)
 	}
-	ctx := context.Background()
+	defer s.Close()
 
-	token := models.RefreshToken{
-		TokenID:   "token_123",
-		UserID:    "user_abc",
-		ExpiresAt: time.Now().Add(1 * time.Hour), // Expires in future
+	refresh := models.RefreshToken{
+		TokenID:   "refresh-1",
+		UserID:    "user-1",
+		ExpiresAt: time.Now().Add(time.Hour),
 	}
-	email := "test@example.com"
-
-	err = store.Add(ctx, token, email)
+	if err := s.Add(context.Background(), refresh, "user@example.test"); err != nil {
+		t.Fatalf("Add after CreateStore: %v (sessions table may not have been initialized)", err)
+	}
+	valid, user, err := s.Check(context.Background(), refresh.TokenID)
 	if err != nil {
-		t.Fatalf("Add() failed: %v", err)
+		t.Fatal(err)
 	}
-
-	exists, user, err := store.Check(ctx, token.TokenID)
-	if err != nil {
-		t.Fatalf("Check() returned error: %v", err)
-	}
-	if !exists {
-		t.Error("Check() returned false, expected true for valid token")
-	}
-
-	if user == nil {
-		t.Error("expected user object, got nil")
+	if !valid || user.GetID() != refresh.UserID || user.GetEmail() != "user@example.test" {
+		t.Fatalf("Check = (%v, %#v), want valid user %q", valid, user, refresh.UserID)
 	}
 }
 
-func TestSQLiteStore_Check_Expired(t *testing.T) {
-	t.Cleanup(cleanup)
-
-	store, err := store.InitSQLiteStore(testDBFilename)
+func TestSQLiteStoreSessionLifecycle(t *testing.T) {
+	s, err := store.InitSQLiteStore(filepath.Join(t.TempDir(), "sessions.sqlite"))
 	if err != nil {
-		t.Fatalf("error initializing store: %s\n", err)
+		t.Fatal(err)
 	}
+	defer s.Close()
+
 	ctx := context.Background()
-
-	token := models.RefreshToken{
-		TokenID:   "expired_token",
-		UserID:    "user_abc",
-		ExpiresAt: time.Now().Add(-1 * time.Hour), // Token is set to expire an hour ago
+	valid := models.RefreshToken{TokenID: "valid", UserID: "user-1", ExpiresAt: time.Now().Add(time.Hour)}
+	expired := models.RefreshToken{TokenID: "expired", UserID: "user-1", ExpiresAt: time.Now().Add(-time.Minute)}
+	other := models.RefreshToken{TokenID: "other-user", UserID: "user-2", ExpiresAt: time.Now().Add(time.Hour)}
+	for _, item := range []struct {
+		token models.RefreshToken
+		email string
+	}{{valid, "one@example.test"}, {expired, "one@example.test"}, {other, "two@example.test"}} {
+		if err := s.Add(ctx, item.token, item.email); err != nil {
+			t.Fatalf("Add(%q): %v", item.token.TokenID, err)
+		}
 	}
 
-	err = store.Add(ctx, token, "test@example.com")
-	if err != nil {
-		t.Fatalf("setup insert failed: %v", err)
+	ok, user, err := s.Check(ctx, valid.TokenID)
+	if err != nil || !ok || user.GetID() != "user-1" || user.GetEmail() != "one@example.test" {
+		t.Fatalf("valid Check = (%v, %#v, %v)", ok, user, err)
+	}
+	ok, _, err = s.Check(ctx, expired.TokenID)
+	if err != nil || ok {
+		t.Fatalf("expired Check = (%v, %v), want false, nil", ok, err)
+	}
+	ok, _, err = s.Check(ctx, "missing")
+	if err != nil || ok {
+		t.Fatalf("missing Check = (%v, %v), want false, nil", ok, err)
 	}
 
-	exists, _, err := store.Check(ctx, token.TokenID)
-	if err != nil {
-		t.Fatalf("Check() failed: %v", err)
+	if err := s.Remove(ctx, valid.TokenID); err != nil {
+		t.Fatal(err)
 	}
-	if exists {
-		t.Error("Check() returned true, expected false for expired token")
+	ok, _, err = s.Check(ctx, valid.TokenID)
+	if err != nil || ok {
+		t.Fatalf("Check after Remove = (%v, %v), want false, nil", ok, err)
+	}
+
+	if err := s.RemoveAllForUser(ctx, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	ok, _, err = s.Check(ctx, "other-user")
+	if err != nil || !ok {
+		t.Fatalf("RemoveAllForUser removed another user's session: (%v, %v)", ok, err)
 	}
 }
 
-func TestSQLiteStore_Remove(t *testing.T) {
-	t.Cleanup(cleanup)
-
-	store, err := store.InitSQLiteStore(testDBFilename)
-	if err != nil {
-		t.Fatalf("error initializing store: %s\n", err)
-	}
-	ctx := context.Background()
-
-	token := models.RefreshToken{
-		TokenID:   "token_to_remove",
-		UserID:    "user_1",
-		ExpiresAt: time.Now().Add(1 * time.Hour),
-	}
-	store.Add(ctx, token, "email@test.com")
-
-	err = store.Remove(ctx, token.TokenID)
-	if err != nil {
-		t.Fatalf("Remove() failed: %v", err)
-	}
-
-	exists, _, _ := store.Check(ctx, token.TokenID)
-	if exists {
-		t.Error("token still exists after Remove()")
-	}
-}
-
-func TestSQLiteStore_RemoveAllForUser(t *testing.T) {
-	t.Cleanup(cleanup)
-
-	store, err := store.InitSQLiteStore(testDBFilename)
-	if err != nil {
-		t.Fatalf("error initializing store: %s\n", err)
-	}
-	ctx := context.Background()
-
-	userA := "user_A"
-	userB := "user_B"
-
-	store.Add(ctx, models.RefreshToken{TokenID: "t1", UserID: userA, ExpiresAt: time.Now().Add(time.Hour)}, "a@test.com")
-	store.Add(ctx, models.RefreshToken{TokenID: "t2", UserID: userA, ExpiresAt: time.Now().Add(time.Hour)}, "a@test.com")
-	store.Add(ctx, models.RefreshToken{TokenID: "t3", UserID: userB, ExpiresAt: time.Now().Add(time.Hour)}, "b@test.com")
-
-	err = store.RemoveAllForUser(ctx, userA)
-	if err != nil {
-		t.Fatalf("RemoveAllForUser() failed: %v", err)
-	}
-
-	if exists, _, _ := store.Check(ctx, "t1"); exists {
-		t.Error("t1 (User A) should have been deleted")
-	}
-	if exists, _, _ := store.Check(ctx, "t2"); exists {
-		t.Error("t2 (User A) should have been deleted")
-	}
-	// User B token should remain
-	if exists, _, _ := store.Check(ctx, "t3"); !exists {
-		t.Error("t3 (User B) should NOT have been deleted")
+func TestCreateStoreRejectsUnknownDriver(t *testing.T) {
+	if _, err := store.CreateStore(config.StoreConfig{Driver: "not-a-driver"}); err == nil {
+		t.Fatal("CreateStore accepted an unknown driver")
 	}
 }

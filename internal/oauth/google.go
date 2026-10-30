@@ -43,7 +43,14 @@ func NewGoogleProvider(conf *oauth2.Config, userInfoURL string) Provider {
 
 func NewGoogleProviderFromConf(serviceDomain string, conf config.ProviderConfig) (Provider, error) {
 	clientID := os.Getenv(conf.EnvironmentVariables["clientID"])
+	if clientID == "" {
+		return nil, fmt.Errorf("No clientID in configuration")
+	}
 	clientSecret := os.Getenv(conf.EnvironmentVariables["clientSecret"])
+	if clientSecret == "" {
+		return nil, fmt.Errorf("No clientSecret in configuration")
+	}
+
 	endpoint := google.Endpoint
 	redirectURL := util.BuildURL(serviceDomain, "callback", "google")
 	oauthConf := NewGoogleProviderConf(clientID, clientSecret, redirectURL, endpoint)
@@ -76,11 +83,18 @@ func (p *googleProvider) ExchangeUserInfo(code string) (models.User, error) {
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google provider responded with status: %d", resp.StatusCode)
+	}
 	defer resp.Body.Close()
 
 	var user googleUser
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
 		return nil, err
+	}
+
+	if user.ID == "" || user.Email == "" {
+		return nil, fmt.Errorf("User doesn't have necessary fields")
 	}
 
 	return user, nil
