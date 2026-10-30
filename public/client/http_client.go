@@ -17,14 +17,17 @@ type httpClient struct {
 	verificationKey ed25519.PublicKey
 }
 
-func NewHTTPClient(authDomain string, providers []string) (AuthClient, error) {
+func NewHTTPClient(authDomain, JWKSURL string, providers []string) (AuthClient, error) {
 	if authDomain == "" {
 		return nil, errors.New("no auth domain provided for client")
+	}
+	if JWKSURL == "" {
+		return nil, errors.New("no JWKS URL provided for client")
 	}
 	if len(providers) == 0 {
 		return nil, errors.New("no providers")
 	}
-	verKey, err := GetVerificationKey(authDomain)
+	verKey, err := GetVerificationKey(JWKSURL)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get verification key: %w", err)
 	}

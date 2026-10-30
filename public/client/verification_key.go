@@ -9,8 +9,8 @@ import (
 	"net/http"
 )
 
-func GetVerificationKey(authServiceURL string) (ed25519.PublicKey, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/auth/jwks", authServiceURL))
+func GetVerificationKey(JWKSURL string) (ed25519.PublicKey, error) {
+	resp, err := http.Get(fmt.Sprintf("%s/auth/jwks", JWKSURL))
 	if err != nil {
 		return nil, err
 	}
